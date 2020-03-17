@@ -26,6 +26,9 @@ def test_solve_both_multiple_depots():
         distance_matrix=b_dist, demands=b_loc['demand'], dep_starts=starts, dep_ends=ends,
         num_vehicles=len(b_capa),
         vehicle_capacities=b_capa,
+        travel_time_limit=int(1e9),
+        vehicle_speed=int(1e9),
+        max_travel_distance=3000
     )
     vrp.solve()
     global result
