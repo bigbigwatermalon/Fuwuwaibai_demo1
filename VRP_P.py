@@ -5,8 +5,8 @@ import numpy as np
 
 class VRP:
     def __init__(
-            self, distance_matrix, demands, dep_starts, dep_ends,
-            depot=0, num_vehicles=None, vehicle_capacities=None, discharge_time=5,
+            self, distance_matrix, demands, dep_starts=[], dep_ends=[],
+            depot=-1, num_vehicles=None, vehicle_capacities=None, discharge_time=5,
             time_limit=20, travel_time_limit=int(1e9), vehicle_speed=int(1e9),
             max_travel_distance=3000, strategy='AUTOMATIC'
     ):
@@ -18,9 +18,7 @@ class VRP:
         self.time_limit = time_limit             # 整数（秒） 超过这个时间则叫停算法，返回结果
         self.strategy = strategy                 # 字符串 指定具体启发式算法 可选：
         self.routes = []
-        self.status = 0
         self.time_matrix = distance_matrix # 路程时间方阵
-        self.times = []
         self.travel_time_limit = travel_time_limit
         self.distance_of_routes = []
         self.vehicle_speed = vehicle_speed
@@ -48,6 +46,7 @@ class VRP:
         else:                                                                                 # 二者都不给定
             self.mode = 'NONE'
             self.num_vehicles = len(distance_matrix) // 5
+            # self.num_vehicles = 2
             self.vehicle_capacities = None
 
     def solve(self):
@@ -85,12 +84,19 @@ class VRP:
         }
 
     def _solve_classic_vrp(self):
-        manager = pywrapcp.RoutingIndexManager(
-            len(self.distance_matrix),
-            self.num_vehicles,
-            self.starts,
-            self.ends,
-        )
+        if self.depot == -1:
+            manager = pywrapcp.RoutingIndexManager(
+                len(self.distance_matrix),
+                self.num_vehicles,
+                self.starts,
+                self.ends
+            )
+        else:
+            manager = pywrapcp.RoutingIndexManager(
+                len(self.distance_matrix),
+                self.num_vehicles,
+                self.depot,
+            )
         routing = pywrapcp.RoutingModel(manager)
 
         def distance_callback(from_index, to_index):
@@ -112,8 +118,8 @@ class VRP:
             self.max_travel_distance,
             True,
             dimension_name)
-        distance_dimension = routing.GetDimensionOrDie(dimension_name)
-        distance_dimension.SetGlobalSpanCostCoefficient(100)
+        # distance_dimension = routing.GetDimensionOrDie(dimension_name)
+        # distance_dimension.SetGlobalSpanCostCoefficient(100)
 
         time_callback_index = routing.RegisterTransitCallback(time_callback)
         routing.AddDimension(
@@ -130,9 +136,9 @@ class VRP:
             routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC)
 
         search_parameters.local_search_metaheuristic = \
-            getattr(routing_enums_pb2.FirstSolutionStrategy, self.strategy)
+            (routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
         search_parameters.time_limit.seconds = 2
-        search_parameters.log_search = True
+        # search_parameters.log_search = True
 
 
         solution = routing.SolveWithParameters(search_parameters)
@@ -145,14 +151,21 @@ class VRP:
                     index = solution.Value(routing.NextVar(index))
                     route.append(manager.IndexToNode(index))
                 self.routes.append(route)
-
+        self._distance_routes()
     def _solve_vrp_with_capacity_constraint(self):
-        manager = pywrapcp.RoutingIndexManager(
-            len(self.distance_matrix),
-            self.num_vehicles,
-            self.starts,
-            self.ends
-        )
+        if self.depot == -1:
+            manager = pywrapcp.RoutingIndexManager(
+                len(self.distance_matrix),
+                self.num_vehicles,
+                self.starts,
+                self.ends
+            )
+        else:
+            manager = pywrapcp.RoutingIndexManager(
+                len(self.distance_matrix),
+                self.num_vehicles,
+                self.depot,
+            )
         routing = pywrapcp.RoutingModel(manager)
 
         def distance_callback(from_index, to_index):
@@ -177,8 +190,6 @@ class VRP:
             True,
             'Distance'
         )
-        # distance_dimension = routing.GetDimensionOrDie('Distance')
-        # distance_dimension.SetGlobalSpanCostCoefficient(3000)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
         demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
@@ -207,7 +218,7 @@ class VRP:
         search_parameters.local_search_metaheuristic = \
             (routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
         search_parameters.time_limit.seconds = 2
-        search_parameters.log_search = True
+        # search_parameters.log_search = True
 
         solution = routing.SolveWithParameters(search_parameters)
         if solution:
