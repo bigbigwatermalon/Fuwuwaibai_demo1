@@ -81,8 +81,9 @@ if __name__ == '__main__':
 
 # Case3:只有限载的约束b_capa，这时，只考虑同一起始点，b_capa为载重列表，列表中数据唯一
     b_capa = [14, 16]
+    depot = 0 ## 起始点为0
     vrp = VRP(
-        distance_matrix=b_dist, demands=b_loc['demand'], depot=0,
+        distance_matrix=b_dist, demands=b_loc['demand'], depot=depot,
         # num_vehicles=len(b_capa),
         vehicle_capacities=b_capa,
         travel_time_limit=int(1e9),
