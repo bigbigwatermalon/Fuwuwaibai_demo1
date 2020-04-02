@@ -97,7 +97,11 @@ if __name__ == '__main__':
     #     print(result['routes'])
     #     # print(result)
     #     draw()
-    # Case4:外卖情形
+
+    # Case4:外卖情形  给定每个外卖员的起点starts以及商家和客户坐标点矩阵pickups_deliveries，第一列为商家地点索引
+    #                 第二列为吃外卖客户的位置索引。pick_weights和weight_limits为限制条件，具体见VRP类的 __init__
+    #                 当pick_weight和weight_limits同时给出时，就对于外卖员同时运输的外卖的数量或者重量上有限制。
+    #                 任一不给出时，就认为外卖员神力，可以同时拿着任意数量及重量的外卖来回穿梭。
     starts = [1, 6]
     pickups_deliveries = [
         [2, 10],
@@ -113,13 +117,11 @@ if __name__ == '__main__':
         distance_matrix=b_dist, dep_starts=starts, pickups_deliveries=pickups_deliveries,
         num_vehicles=len(starts),
         max_travel_distance=3000,
-        pick_capacities=1,
+        pick_weights=1,
         # pick_capacities=[1, 1, 1, 1, 1, 1, 1]
         weight_limits=[3, 3]
     )
     vrp.solve()
-    # result = vrp.result()
+    result = vrp.result_pd()
     # print(result['routes'])
-    # print(result)
-
-    # draw()
+    print(result)

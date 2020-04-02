@@ -6,7 +6,7 @@ import numpy as np
 class VRP:
     def __init__(
             self, distance_matrix, demands=None, dep_starts=[], dep_ends=[],
-            depot=-1, pickups_deliveries=None, num_vehicles=None, vehicle_capacities=None, pick_capacities=None,
+            depot=-1, pickups_deliveries=None, num_vehicles=None, vehicle_capacities=None, pick_weights=None,
             weight_limits = None, discharge_time=0, time_limit=20, travel_time_limit=int(1e9), vehicle_speed=int(1e9),
             max_travel_distance=3000, strategy='AUTOMATIC'
     ):
@@ -25,7 +25,7 @@ class VRP:
         self.discharge_time = discharge_time  # 卸货时间单位/分
         self.max_travel_distance = max_travel_distance
         self.pickups_deliveries = pickups_deliveries  # n*2列表，第一列为取外卖点，第二列为送外卖点。
-        self.pick_capacities = pick_capacities        # int或者list，每一个外卖的重量，当为int时，
+        self.pick_weights = pick_weights              # int或者list，每一个外卖的重量，当为int时，
                                                       #     表示每个外卖都为这个int值，当为list时，即为
                                                       #     各个外卖的重量，元素个数与上面变量的行数相同，即n
                                                       #     当其值为1时，可以把外卖重量转化为同时携带的外卖数。
@@ -97,6 +97,16 @@ class VRP:
             'distance_of_routes': self.distance_of_routes,
         }
 
+    def result_pd(self):
+        return {
+            'routes': self.routes,
+            'distance_of_routes':self.distance_of_routes,
+            'starts':self.starts,
+            'num_vehicles':self.num_vehicles,
+            'weight_limits':self.weight_limits,
+            'pick_weights':self.pick_weights
+        }
+
     def _solve_vrp_with_pickups_deliveries(self):
         # 在距离矩阵上方扩充一行零矩阵，左方扩充一列零矩阵，使得形状由N*N变为(N+1)*(N+1)
         self.distance_matrix = np.c_[np.zeros(self.distance_matrix.shape[0], dtype=int), self.distance_matrix]
@@ -128,19 +138,20 @@ class VRP:
         distance_dimension = routing.GetDimensionOrDie(dimension_name)
         distance_dimension.SetGlobalSpanCostCoefficient(100)
 
-        if self.pick_capacities:
+        if self.pick_weights and self.weight_limits:
             pickups_deliveries = np.array(self.pickups_deliveries).T
-            if isinstance(self.pick_capacities, int):
-                pick_capacities = [self.pick_capacities] * pickups_deliveries.shape[1]
+            if isinstance(self.pick_weights, int):
+                pick_weights = [self.pick_weights] * pickups_deliveries.shape[1]
             else:
-                pick_capacities = self.pick_capacities
+                pick_weights = self.pick_weights
             # print(pick_capacities)
             # print(self.pickups_deliveries.shape)
             # print(self.pickups_deliveries)
+            self.pick_weights = pick_weights
             pick_weights = [0] * len(self.distance_matrix)
             for i in range(2):
                 for j in range(pickups_deliveries.shape[1]):
-                    pick_weights[pickups_deliveries[i][j]] = pick_capacities[j] * (-2 * i + 1)
+                    pick_weights[pickups_deliveries[i][j]] = pick_weights[j] * (-2 * i + 1)
             # print(pick_weights)
 
             def weight_callback(from_index):
@@ -150,6 +161,7 @@ class VRP:
                 weight_limits = [self.weight_limits] * self.num_vehicles
             else:
                 weight_limits = self.weight_limits
+            self.weight_limits = weight_limits
             weight_callback_index = routing.RegisterUnaryTransitCallback(weight_callback)
             routing.AddDimensionWithVehicleCapacity(
                 weight_callback_index,
@@ -192,9 +204,9 @@ class VRP:
 
             for i in range(len(self.routes)):
                 self.routes[i] = self.routes[i][:-1]
-            print(self.routes)
+            # print(self.routes)
         self._distance_routes()
-        print(self.distance_of_routes)
+        # print(self.distance_of_routes)
 
     def _solve_classic_vrp(self):
         if self.depot == -1:
