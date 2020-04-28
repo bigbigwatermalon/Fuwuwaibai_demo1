@@ -6,8 +6,8 @@ import numpy as np
 class VRP:
     def __init__(
             self, distance_matrix, demands=None, dep_starts=[], dep_ends=[],
-            depot=-1, pickups_deliveries=None, num_vehicles=None, vehicle_capacities=None, pick_weights=None,
-            weight_limits = None, discharge_time=0, time_limit=20, travel_time_limit=int(1e9), vehicle_speed=int(1e9),
+            depot=0, pickups_deliveries=None, num_vehicles=None, vehicle_capacities=None, pick_weights=None,
+            weight_limits = None, discharge_time=0, time_limit=2, travel_time_limit=int(1e9), vehicle_speed=int(1e9),
             max_travel_distance=3000, strategy='AUTOMATIC'
     ):
         self.starts = dep_starts
@@ -33,6 +33,8 @@ class VRP:
                                                       #     当为int时，所有外卖员的限制携带外卖数都为这个值
                                                       #     当为list时，即为各个外卖员的携带限制数。此时要满足
                                                       #     len(weight_limits)==num_vehicles
+
+        self.full_load_rate = []                      # 满载率，当同时给定车辆和载重的情况下才会计算。
         if pickups_deliveries is not None:
             self.mode = 'PD'
             self.num_vehicles = num_vehicles
@@ -43,10 +45,12 @@ class VRP:
             self.mode = 'BOTH'
             self.num_vehicles = num_vehicles
             self.vehicle_capacities = vehicle_capacities
+            self.starts = [self.depot] * self.num_vehicles
         elif num_vehicles is not None and vehicle_capacities is None:  # 给定车辆数量，不给定车子容量
             self.mode = 'NONLY'
             self.num_vehicles = num_vehicles
             self.vehicle_capacities = []
+            self.starts = [self.depot] * self.num_vehicles
         elif num_vehicles is None and vehicle_capacities is not None:  # 不给定车辆数量，给定车子容量
             if len(vehicle_capacities) != len(set(vehicle_capacities)):
                 raise ValueError('`vehicle_capacities` must contain unique numbers ' \
@@ -80,6 +84,7 @@ class VRP:
                 bound = bound1 & bound2
                 self.vehicle_capacities[bound] = capacity_options[i]
             self.vehicle_capacities = self.vehicle_capacities.tolist()
+            self.starts = [self.depot] * self.num_vehicles
         elif self.mode == 'PD':
             self._solve_vrp_with_pickups_deliveries()
         else:
@@ -88,7 +93,6 @@ class VRP:
 
     def result(self):
         return {
-            'distance_matrix': self.distance_matrix,
             'demands': self.demands,
             'starts': self.starts,
             'num_vehicles': self.num_vehicles,
@@ -101,7 +105,7 @@ class VRP:
         return {
             'routes': self.routes,
             'distance_of_routes':self.distance_of_routes,
-            'starts':self.starts,
+            'starts':self.depot,
             'num_vehicles':self.num_vehicles,
             'weight_limits':self.weight_limits,
             'pick_weights':self.pick_weights
@@ -132,7 +136,7 @@ class VRP:
         routing.AddDimension(
             transit_callback_index,
             0,  # no slack
-            3000,  # vehicle maximum travel distance
+            self.max_travel_distance,  # vehicle maximum travel distance
             True,  # start cumul to zero
             dimension_name)
         distance_dimension = routing.GetDimensionOrDie(dimension_name)
@@ -183,9 +187,9 @@ class VRP:
                 distance_dimension.CumulVar(delivery_index))
 
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
-        search_parameters.time_limit.seconds = 2
+        search_parameters.local_search_metaheuristic = \
+            getattr(routing_enums_pb2.LocalSearchMetaheuristic, self.strategy)
+        search_parameters.time_limit.seconds = self.time_limit
         # search_parameters.log_search = True
 
         # Solve the problem.
@@ -209,19 +213,11 @@ class VRP:
         # print(self.distance_of_routes)
 
     def _solve_classic_vrp(self):
-        if self.depot == -1:
-            manager = pywrapcp.RoutingIndexManager(
-                len(self.distance_matrix),
-                self.num_vehicles,
-                self.starts,
-                self.ends
-            )
-        else:
-            manager = pywrapcp.RoutingIndexManager(
-                len(self.distance_matrix),
-                self.num_vehicles,
-                self.depot,
-            )
+        manager = pywrapcp.RoutingIndexManager(
+            len(self.distance_matrix),
+            self.num_vehicles,
+            self.depot,
+        )
         routing = pywrapcp.RoutingModel(manager)
 
         def distance_callback(from_index, to_index):
@@ -261,8 +257,8 @@ class VRP:
             routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC)
 
         search_parameters.local_search_metaheuristic = \
-            (routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
-        search_parameters.time_limit.seconds = 2
+            getattr(routing_enums_pb2.LocalSearchMetaheuristic, self.strategy)
+        search_parameters.time_limit.seconds = self.time_limit
         # search_parameters.log_search = True
 
         solution = routing.SolveWithParameters(search_parameters)
@@ -278,19 +274,11 @@ class VRP:
         self._distance_routes()
 
     def _solve_vrp_with_capacity_constraint(self):
-        if self.depot == -1:
-            manager = pywrapcp.RoutingIndexManager(
-                len(self.distance_matrix),
-                self.num_vehicles,
-                self.starts,
-                self.ends
-            )
-        else:
-            manager = pywrapcp.RoutingIndexManager(
-                len(self.distance_matrix),
-                self.num_vehicles,
-                self.depot,
-            )
+        manager = pywrapcp.RoutingIndexManager(
+            len(self.distance_matrix),
+            self.num_vehicles,
+            self.depot,
+        )
         routing = pywrapcp.RoutingModel(manager)
 
         def distance_callback(from_index, to_index):
@@ -341,8 +329,8 @@ class VRP:
             routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC)
 
         search_parameters.local_search_metaheuristic = \
-            (routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
-        search_parameters.time_limit.seconds = 2
+            getattr(routing_enums_pb2.LocalSearchMetaheuristic, self.strategy)
+        search_parameters.time_limit.seconds = self.time_limit
         # search_parameters.log_search = True
 
         solution = routing.SolveWithParameters(search_parameters)
@@ -373,3 +361,12 @@ class VRP:
                 distance += self.distance_matrix[route[i]][route[i + 1]]
                 # print(route[i], route[i + 1], self.distance_matrix[route[i]][route[i + 1]])
             self.distance_of_routes.append(distance)
+
+    def _full_load_rate(self):
+        for i in range(len(self.routes)):
+            route = self.routes[i]
+            loaded = 0
+            for j in range(len(route)):
+                loaded += self.demands[route[j]]
+            self.full_load_rate.append(loaded / self.vehicle_capacities[i])
+        return self.full_load_rate
